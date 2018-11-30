@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-2
+  # Just some extra metadata in the form of annotations
+  annotations:
+    description: Deployment for simple web app (type 2)
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webapp-2
+  template:
+    metadata:
+      labels:
+        app: webapp-2
+    spec:
+      # Pod attributes
+      affinity:
+        nodeAffinity:
+          # This pod should run on a node tagged with feature type2
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                - key: featureReq
+                  operator: In
+                  values:
+                  - type2
+        podAffinity:
+          # This pod should run on a node together with a webapp-1 pod
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - webapp-1
+            topologyKey: kubernetes.io/hostname
+      # Container attributes
+      containers:
+      - name: webserver
+        image: nginx:1.7.9
+        env:
+          # The common parts for messages in apps are taken from configMaps
+        - name: GREETING_TEXT
+          valueFrom:
+            configMapKeyRef:
+              name: webapp-vars
+              key: GREETING_TEXT 
+        - name: OUTPUT_TEXT
+          valueFrom:
+            configMapKeyRef:
+              name: webapp-vars
+              key: OUTPUT_TEXT
+        # Use of the Downward API to retrieve pod and node names
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        lifecycle:
+            postStart:
+              exec:
+                command:
+                - "/bin/bash"
+                - "-c"
+                - >
+                  `# Customizing web page content for webapp 2`
+                  echo ${GREETING_TEXT} TYPE 2 > /usr/share/nginx/html/index.html;
+                  `# Logging START on a file in persistent folder`
+                  echo ${POD_NAME} ${OUTPUT_TEXT} TYPE 2 STARTED on node ${NODE_NAME} >> /app-output/postStart;
+                  echo Containers running at $(date;ls -la /app-input/containers) >> /app-input/containersList
+            preStop:
+              exec:
+                command:
+                - "/bin/bash"
+                - "-c"
+                - >
+                  `# Logging STOP on a file in persistent folder`
+                  echo ${POD_NAME} ${OUTPUT_TEXT} TYPE 2 STOPPED on node ${NODE_NAME} >> /app-output/preStop
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - mountPath: /app-output
+          name: output-volume
+        - mountPath: /app-input
+          name: host-volume
+      volumes:
+        # GCE persistent disk that can be accesed in read-write mode as only one replica is deployed
+      - name: output-volume
+        gcePersistentDisk:
+          pdName: shared-disk
+          #readOnly: true
+          fsType: ext4
+        # Host volume that allows pod to read files from underlying host file system
+      - name: host-volume
+        hostPath:
+          path: /var/lib/docker
+          type: Directory
+        
