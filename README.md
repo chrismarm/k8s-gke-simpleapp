@@ -103,6 +103,43 @@ $ kubectl describe ingress webapp-ingress
 
 Again, if we open GCP console, we will be able to see that a new HTTP load balancer has been automatically created by GKE for our Ingress
 
+### Cluster monitoring using Prometheus
+
+Now we are going to install Prometheus on our GKE cluster by deploying a pod. To do so, we will run the following commands, described in https://devopscube.com/setup-prometheus-monitoring-on-kubernetes/
+
+```sh
+$ cd prometheus
+
+# Grant admin privileges for cluster
+$ kubectl create clusterrolebinding admin-priviliges --clusterrole cluster-admin --user <GCP_ACCOUNT>
+
+# New namespace for monitoring purposes
+kubectl create namespace prometheus
+
+# Role creation for Prometheus
+kubectl create -f prometheusRole.yaml
+kubectl create -f prometheusRoleBinding.yaml
+
+# Configuration of Prometheus server in the form of a configMap that will be mounted as volume to be consumed by our pod
+kubectl create -f prometheus-server-conf.yaml -n prometheus
+
+# Prometheus pod as a deployment. Container will use a fully-functional Docker image and will mount the previous configMap as a volume to read the proper configuration
+kubectl create  -f prometheus-deployment.yaml --namespace=prometheus
+
+# In order to consume Prometheus metrics from our workstation, we will forward pod port (9090) to our localhost:8080
+promPodName=$(kubectl get pods --namespace=prometheus | grep -o "prometheus-\S*")
+kubectl port-forward $(promPodName) 8080:9090 -n prometheus
+```
+
+Now we can open `localhost:8080` to work with Prometheus console and watch metrics from our GKE cluster. Additionally, we can run a `Grafana` server locally to define some visual charts and dashboards from Prometheus metrics (from GKE cluster):
+
+```sh
+$ docker pull grafana/grafana
+$ docker run -d --name=grafana -p 3000:3000 grafana/grafana
+```
+
+Then open Grafana console in `localhost:3000` and configure the remote Prometheus service as a Data Source from redirected URI localhost:8080.
+
 ### Future improvements
 
   - Helm to package all the K8S manifests and make parameterized templates for common definitions
